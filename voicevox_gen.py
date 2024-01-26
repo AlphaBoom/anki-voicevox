@@ -360,13 +360,32 @@ def onVoicevoxOptionSelected(browser):
             progress_bar.setMaximum(total_notes)
             progress_bar.setValue(notes_so_far)
             mw.app.processEvents()
-
+        # Filter empty field
+        empty_notes = []
+        selected_notes = []
+        for note_id in dialog.selected_notes:
+            note = mw.col.getNote(note_id)
+            if note[source_field]:
+                selected_notes.append(note_id)
+            else:
+                empty_notes.append(note_id)
+        for note_id in empty_notes:
+            # set destination field empty
+            note = mw.col.getNote(note_id)
+            note[destination_field] = ""
+            note.flush()
+        if not selected_notes:
+            mw.progress.finish()
+            mw.reset()
+            return
         # We split the work into chunks so we can pass a bunch of audio queries to the synthesizer instead of doing them one at time, but we don't want to do all of them at once so chunks make the most sense
         CHUNK_SIZE = 4
-        note_chunks = DivideIntoChunks(dialog.selected_notes, CHUNK_SIZE)
+        note_chunks = DivideIntoChunks(selected_notes, CHUNK_SIZE)
         notes_so_far = 0
-        total_notes = len(dialog.selected_notes)
+        total_notes = len(selected_notes)
         updateProgress(notes_so_far, total_notes)
+
+        desk_id = mw.col.decks.selected()
         
         for note_chunk in note_chunks:
             note_text_and_speakers = map(getNoteTextAndSpeaker, note_chunk)
@@ -399,8 +418,8 @@ def onVoicevoxOptionSelected(browser):
                         audio_data = new_audio_data
                         audio_extension = "mp3"
 
-                    file_id = str(uuid.uuid4())
-                    filename = f"VOICEVOX_{file_id}.{audio_extension}"
+                    # file_id = str(uuid.uuid4())
+                    filename = f"VOICEVOX_{desk_id}_{note_id}_{destination_field}.{audio_extension}"
                     audio_full_path = join(media_dir, filename)
 
                     with open(audio_full_path, "wb") as f:
