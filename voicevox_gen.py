@@ -1,4 +1,4 @@
-from aqt.qt import QComboBox, QHBoxLayout, QLabel, QPushButton, QApplication, QMessageBox
+from aqt.qt import QComboBox, QHBoxLayout, QLabel, QPushButton, QApplication, QMessageBox, QSlider
 from aqt import browser, gui_hooks, qt
 from aqt import mw
 from aqt.sound import av_player
@@ -150,6 +150,18 @@ class MyDialog(qt.QDialog):
         self.ignore_brackets_checkbox.setChecked(True)
         # self.grid_layout.addWidget(self.ignore_brackets_checkbox, 0, 4)
 
+        def update_random_name_check_status(value):
+            if value:
+                config['random_name'] = True
+            else:
+                config['random_name'] = False
+
+        self.random_name_checkbox = qt.QCheckBox("Random ID")
+        self.random_name_checkbox.setToolTip("The ouput file has unique ID with every generate process.")
+        self.random_name_checkbox.setChecked(False)
+        self.random_name_checkbox.stateChanged.connect(update_random_name_check_status)
+        self.grid_layout.addWidget(self.random_name_checkbox, 0, 4)
+
         speaker_json = getSpeakersOrNone()
         if speaker_json is None:
             layout.addWidget(qt.QLabel("VOICEVOX service was unable to get speakers list. Please make sure the VOICEVOX service is running and reopen this dialog"))
@@ -218,6 +230,49 @@ class MyDialog(qt.QDialog):
         self.grid_layout.addWidget(self.cancel_button, 2, 0, 1, 2)
         self.grid_layout.addWidget(self.generate_button, 2, 3, 1, 2)
         
+        def update_slider(slider, label, config_name, slider_desc):
+            def update_this_slider(value):
+                label.setText(f'{slider_desc} {slider.value() / 100}')
+                config[config_name] = slider.value()
+                mw.addonManager.writeConfig(__name__, config)
+            return update_this_slider
+        
+        volume_slider = QSlider(qt.Qt.Orientation.Horizontal)
+        volume_slider.setMinimum(0)
+        volume_slider.setMaximum(200)
+        volume_slider.setValue(config.get('volume_slider_value') or 100)
+        
+        volume_label = QLabel(f'Volume scale {volume_slider.value() / 100}')
+        
+        volume_slider.valueChanged.connect(update_slider(volume_slider, volume_label, 'volume_slider_value', 'Volume scale'))
+
+        self.grid_layout.addWidget(volume_label, 3, 0, 1, 2)
+        self.grid_layout.addWidget(volume_slider, 3, 3, 1, 2)
+        
+        pitch_slider = QSlider(qt.Qt.Orientation.Horizontal)
+        pitch_slider.setMinimum(-15)
+        pitch_slider.setMaximum(15)
+        pitch_slider.setValue(config.get('pitch_slider_value') or 0)
+        
+        pitch_label = QLabel(f'Pitch scale {pitch_slider.value() / 100}')
+        
+        pitch_slider.valueChanged.connect(update_slider(pitch_slider, pitch_label, 'pitch_slider_value', 'Pitch scale'))
+
+        self.grid_layout.addWidget(pitch_label, 4, 0, 1, 2)
+        self.grid_layout.addWidget(pitch_slider, 4, 3, 1, 2)
+        
+        speed_slider = QSlider(qt.Qt.Orientation.Horizontal)
+        speed_slider.setMinimum(50)
+        speed_slider.setMaximum(200)
+        speed_slider.setValue(config.get('speed_slider_value') or 100)
+        
+        speed_label = QLabel(f'Speed scale {speed_slider.value() / 100}')
+        
+        speed_slider.valueChanged.connect(update_slider(speed_slider, speed_label, 'speed_slider_value', 'Speed scale'))
+
+        self.grid_layout.addWidget(speed_label, 5, 0, 1, 2)
+        self.grid_layout.addWidget(speed_slider, 5, 3, 1, 2)
+
         layout.addLayout(self.grid_layout)
 
         self.setLayout(layout)
@@ -232,35 +287,35 @@ class MyDialog(qt.QDialog):
         (speaker_index, speaker, style_info) = getSpeaker(self.speakers, self.speaker_combo, self.style_combo)
         if speaker_index is None:
             raise Exception('getSpeaker returned None in PreviewVoice')
+            
+        preview_sentences = ["こんにちは、これはテスト文章です。", "ＤＶＤの再生ボタンを押して、書斎に向かった。", "さてと 、 ご馳走様でした", "真似しないでくれる？", "な 、 なんだよ ？　 テンション高いな"]
+            
+        tup = (random.choice(preview_sentences), speaker_index)
+        result = GenerateAudioQuery(tup, mw.addonManager.getConfig(__name__))
+        contents = SynthesizeAudio(result, speaker_index)
         
-        speaker_uuid = speaker[2]
-        speaker_info = getSpeakerInfo(speaker_uuid)
-        if speaker_info is not None:
-            voice_samples = None
-            style_infos = speaker_info['style_infos']
-            for style_info in style_infos:
-                if style_info['id'] == speaker_index:
-                    voice_samples = list(style_info['voice_samples'])
-                    break
-            if voice_samples is not None:
-                voice_base64 = random.choice(voice_samples)
-                file_content = base64.b64decode(voice_base64)
-
-                addon_path = dirname(__file__)
-                preivew_path = join(addon_path, "VOICEVOX_preview.wav")
-                with open(preivew_path, "wb") as f:
-                    f.write(file_content)
-                av_player.play_file(preivew_path)
-        else:
-            QMessageBox.critical(mw, "Error", f"Unable to get speaker info for speaker {speaker_uuid}. Check that VOICEVOX is running")
-def GenerateAudioQuery(text_and_speaker_index_tuple):
+        addon_path = dirname(__file__)
+        preivew_path = join(addon_path, "VOICEVOX_preview.wav")
+        with open(preivew_path, "wb") as f:
+            f.write(contents)
+        av_player.play_file(preivew_path)
+def GenerateAudioQuery(text_and_speaker_index_tuple, config):
     try:
         text = text_and_speaker_index_tuple[0]
         speaker_index = text_and_speaker_index_tuple[1]
         audio_query_response = requests.post("http://127.0.0.1:50021/audio_query?speaker=" + str(speaker_index) + "&text=" + urllib.parse.quote(text, safe=''))
         if audio_query_response.status_code != 200:
             raise Exception(f"Unable to generate audio for the following text: `{text}`. Response code was {audio_query_response.status_code}\nResponse:{audio_query_response.text}")
-        return audio_query_response.content
+        result = audio_query_response.text
+        j = json.loads(result)
+        if config.get('speed_slider_value'):
+            j['speedScale'] = config.get('speed_slider_value') / 100;
+        if config.get('volume_slider_value'):
+            j['volumeScale'] = config.get('volume_slider_value') / 100;
+        if config.get('pitch_slider_value'):
+            j['pitchScale'] = config.get('pitch_slider_value') / 100;
+        result = json.dumps(j, ensure_ascii=False).encode('utf8')
+        return result
     except Exception as e:
         raise Exception(f"Unable to generate audio for the following text: `{text}`.\nResponse: {audio_query_response.text if audio_query_response is not None else 'None'}\n{traceback.format_exc()}")
 
@@ -394,7 +449,7 @@ def onVoicevoxOptionSelected(browser):
             def GenerateQueryAndUpdateProgress(x, query_count):
                 updateProgress(notes_so_far, total_notes, f"Audio Query: {query_count}/{len(note_chunk)}")
                 query_count+=1
-                return GenerateAudioQuery(x)
+                return GenerateAudioQuery(x, config)
 
             audio_queries = list(map(lambda note: GenerateQueryAndUpdateProgress(note, query_count), note_text_and_speakers))
             media_dir = mw.col.media.dir()
@@ -417,9 +472,11 @@ def onVoicevoxOptionSelected(browser):
                     if new_audio_data != None:
                         audio_data = new_audio_data
                         audio_extension = "mp3"
-
-                    # file_id = str(uuid.uuid4())
-                    filename = f"VOICEVOX_{desk_id}_{note_id}_{destination_field}.{audio_extension}"
+                    if config['random_name'] :
+                        file_id = str(uuid.uuid4())
+                        filename = f"VOICEVOX_{file_id}.{audio_extension}"
+                    else:
+                        filename = f"VOICEVOX_{desk_id}_{note_id}_{destination_field}.{audio_extension}"
                     audio_full_path = join(media_dir, filename)
 
                     with open(audio_full_path, "wb") as f:
