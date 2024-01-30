@@ -472,7 +472,7 @@ def onVoicevoxOptionSelected(browser):
                     if new_audio_data != None:
                         audio_data = new_audio_data
                         audio_extension = "mp3"
-                    if config['random_name'] :
+                    if config.get('random_name'):
                         file_id = str(uuid.uuid4())
                         filename = f"VOICEVOX_{file_id}.{audio_extension}"
                     else:
